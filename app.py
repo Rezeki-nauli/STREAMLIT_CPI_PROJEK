@@ -9,9 +9,13 @@ from statsmodels.tsa.seasonal import seasonal_decompose
 # 1. Konfigurasi Halaman (PENTING: letakkan di baris paling pertama)
 st.set_page_config(page_title="Forecasting IHK Medan", layout="wide", page_icon="📈")
 
-# --- CUSTOM CSS UNTUK HEADER DAN METRIC CARDS ---
+# --- CUSTOM CSS UNTUK HEADER, METRIC CARDS, DAN RESPONSIVE LAYOUT ---
 st.markdown("""
 <style>
+    /* ============================================================
+       BASE STYLES (Desktop - default)
+       ============================================================ */
+
     /* Styling untuk KPI Cards */
     div[data-testid="metric-container"] {
         background-color: #1a2235;
@@ -19,6 +23,7 @@ st.markdown("""
         padding: 15px;
         border-radius: 8px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        transition: all 0.2s ease;
     }
 
     /* Menyembunyikan elemen header default Streamlit */
@@ -27,8 +32,10 @@ st.markdown("""
     /* Styling untuk Custom Top Header ala IHKCAST */
     .custom-header {
         display: flex;
+        flex-wrap: wrap;
         justify-content: space-between;
         align-items: center;
+        gap: 12px;
         background-color: #121826;
         padding: 15px 25px;
         border-radius: 8px;
@@ -38,6 +45,7 @@ st.markdown("""
     }
     .header-left {
         display: flex;
+        flex-wrap: wrap;
         align-items: center;
         gap: 15px;
     }
@@ -49,6 +57,7 @@ st.markdown("""
         display: flex;
         align-items: center;
         gap: 8px;
+        white-space: nowrap;
     }
     .logo-dot {
         width: 10px;
@@ -56,6 +65,7 @@ st.markdown("""
         background-color: #00c9a7;
         border-radius: 50%;
         display: inline-block;
+        flex-shrink: 0;
     }
     .header-title {
         color: #94a3b8;
@@ -71,6 +81,120 @@ st.markdown("""
         font-size: 0.85rem;
         font-weight: 600;
         border: 1px solid rgba(0, 201, 167, 0.2);
+        white-space: nowrap;
+    }
+
+    /* ============================================================
+       RESPONSIVE: Gambar/Grafik matplotlib selalu mengikuti lebar
+       kontainer agar tidak overflow di layar sempit.
+       ============================================================ */
+    div[data-testid="stImage"] img,
+    .element-container img {
+        max-width: 100% !important;
+        height: auto !important;
+    }
+
+    /* Tabel & dataframe agar bisa discroll horizontal di mobile
+       daripada memaksa layout melebar */
+    div[data-testid="stDataFrame"] {
+        overflow-x: auto;
+    }
+
+    /* ============================================================
+       TABLET (<= 1024px): rapatkan padding & font sedikit,
+       KPI cards jadi 2 kolom per baris.
+       ============================================================ */
+    @media (max-width: 1024px) {
+        .custom-header {
+            margin-top: -30px;
+            padding: 12px 18px;
+        }
+        .header-title {
+            font-size: 0.95rem;
+        }
+        div[data-testid="metric-container"] {
+            padding: 12px;
+        }
+        div[data-testid="column"] {
+            min-width: 45% !important;
+            flex: 1 1 45% !important;
+        }
+    }
+
+    /* ============================================================
+       MOBILE (<= 768px): semua kolom Streamlit ditumpuk vertikal
+       (1 kolom penuh), header jadi vertikal, font diperkecil.
+       ============================================================ */
+    @media (max-width: 768px) {
+        .block-container {
+            padding-left: 1rem !important;
+            padding-right: 1rem !important;
+            padding-top: 2rem !important;
+        }
+
+        .custom-header {
+            flex-direction: column;
+            align-items: flex-start;
+            margin-top: 0;
+            padding: 12px 15px;
+        }
+        .header-left {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 8px;
+        }
+        .header-title {
+            border-left: none;
+            padding-left: 0;
+            font-size: 0.9rem;
+        }
+        .header-right .badge {
+            font-size: 0.75rem;
+            padding: 5px 10px;
+        }
+        .logo-text {
+            font-size: 1.05rem;
+        }
+
+        /* Paksa semua kolom Streamlit (KPI cards, grafik berdampingan,
+           panel kiri/kanan) menjadi satu kolom penuh agar mudah dibaca
+           dan tidak berdesakan di layar kecil */
+        div[data-testid="column"] {
+            width: 100% !important;
+            flex: 1 1 100% !important;
+            min-width: 100% !important;
+        }
+
+        div[data-testid="metric-container"] {
+            padding: 10px;
+        }
+        div[data-testid="metric-container"] label {
+            font-size: 0.75rem !important;
+        }
+        div[data-testid="metric-container"] div[data-testid="stMetricValue"] {
+            font-size: 1.3rem !important;
+        }
+
+        /* Judul section (##### ...) sedikit lebih kecil di mobile */
+        h5 {
+            font-size: 1rem !important;
+        }
+    }
+
+    /* ============================================================
+       MOBILE KECIL (<= 480px): penyesuaian ekstra untuk HP layar
+       sempit (mis. lebar < 400px).
+       ============================================================ */
+    @media (max-width: 480px) {
+        .logo-text {
+            font-size: 0.95rem;
+        }
+        .header-title {
+            font-size: 0.8rem;
+        }
+        div[data-testid="metric-container"] div[data-testid="stMetricValue"] {
+            font-size: 1.1rem !important;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -142,6 +266,18 @@ else:
     fc_mean_overview.index = fc_index_ov
     fc_ci_overview.index = fc_index_ov
 
+
+def get_fig_size(default=(10, 5), mobile=(6.5, 4)):
+    """
+    Streamlit murni server-side tidak tahu lebar layar client secara
+    langsung tanpa komponen JS tambahan. Sebagai solusi praktis dan ringan,
+    figsize dasar dibuat lebih ramping (rasio lebih persegi) supaya saat
+    di-scale oleh CSS (max-width:100%) ke layar sempit, proporsi teks/garis
+    tetap enak dibaca dibanding figsize yang sangat lebar (mis. 12x4).
+    """
+    return default
+
+
 # 3. TOP NAVIGATION TABS
 tab_ringkasan, tab_ramalan, tab_model, tab_simulasi = st.tabs([
     "📋 Ringkasan",
@@ -182,7 +318,7 @@ with tab_ringkasan:
 
     with col_tren:
         st.markdown("##### TREN IHK HISTORIS & RAMALAN")
-        fig_hist, ax_hist = plt.subplots(figsize=(10, 5))
+        fig_hist, ax_hist = plt.subplots(figsize=get_fig_size())
 
         ihk_hist_plot = ihk_series_bawaan  # seluruh histori hasil backward splicing (2014-sekarang)
         ax_hist.plot(ihk_hist_plot.index, ihk_hist_plot.values, color='#00c9a7', linewidth=1.5, marker='o', markersize=2, label='IHK Aktual')
@@ -198,7 +334,8 @@ with tab_ringkasan:
         ax_hist.xaxis.set_major_locator(mdates.YearLocator())
         ax_hist.xaxis.set_major_formatter(mdates.DateFormatter('%Y'))
 
-        st.pyplot(fig_hist)
+        plt.tight_layout()
+        st.pyplot(fig_hist, use_container_width=True)
 
     with col_musim:
         st.markdown("##### POLA MUSIMAN RATA-RATA")
@@ -221,7 +358,8 @@ with tab_ringkasan:
             ax_sea.grid(color='white', linestyle='-', linewidth=0.2, alpha=0.3, axis='y')
 
             plt.xticks(rotation=45)
-            st.pyplot(fig_sea)
+            plt.tight_layout()
+            st.pyplot(fig_sea, use_container_width=True)
 
         except Exception:
             st.error("Data tidak memiliki rentang waktu yang cukup.")
@@ -311,7 +449,7 @@ with tab_ramalan:
                     st.markdown("##### 📊 Grafik Tren dan Interval Kepercayaan")
                     ihk_24 = ihk_series_aktif[-24:]
 
-                    fig, ax = plt.subplots(figsize=(10, 5))
+                    fig, ax = plt.subplots(figsize=get_fig_size())
                     ax.plot(ihk_24.index, ihk_24.values, color='#00c9a7', linewidth=2, label='IHK Historis (Aktif)')
                     ax.plot(forecast_mean.index, forecast_mean.values, color='#3b82f6', linewidth=2.5, linestyle='--', marker='o', markersize=4, label='Forecast IHK')
                     ax.fill_between(forecast_ci.index, forecast_ci.iloc[:, 0], forecast_ci.iloc[:, 1], color='#3b82f6', alpha=0.15, label='CI (95%)')
@@ -330,7 +468,7 @@ with tab_ramalan:
                     ax.xaxis.set_major_locator(mdates.MonthLocator(interval=max(1, n_forecast // 6)))
                     ax.xaxis.set_major_formatter(mdates.DateFormatter('%b\n%Y'))
                     plt.tight_layout()
-                    st.pyplot(fig)
+                    st.pyplot(fig, use_container_width=True)
 
                 with col_table:
                     st.markdown(f"##### 📋 Tabel Proyeksi ({n_forecast} Bulan)")
@@ -345,7 +483,7 @@ with tab_ramalan:
 with tab_model:
     st.subheader("Spesifikasi & Diagnostik Model SARIMA")
 
-    info1, info2, info3, info4 = st.columns(4)
+    info1, info2, info3 = st.columns(3)
     info1.metric("Model Terpilih", nama_model_final)
     info2.metric("MAE (Test)", f"{mae_test:.4f}")
     info3.metric("MAPE (Test)", f"{mape_test:.2f}%")
@@ -378,7 +516,7 @@ with tab_model:
                 ax.yaxis.label.set_color('white')
                 ax.title.set_color('white')
             plt.tight_layout()
-            st.pyplot(fig_diag)
+            st.pyplot(fig_diag, use_container_width=True)
         except Exception:
             st.warning("Grafik diagnostik tidak dapat ditampilkan.")
 
